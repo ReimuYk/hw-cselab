@@ -36,7 +36,7 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
-  for (int i=0;i<BLOCK_NUM;i++){
+  for (int i=IBLOCK(INODE_NUM,BLOCK_NUM)+1;i<BLOCK_NUM;i++){
     if (using_blocks[i]==0){
       using_blocks[i]=1;
       return i;
@@ -70,6 +70,7 @@ block_manager::block_manager()
   for (int i=0;i<BLOCK_NUM;i++){
     using_blocks[i] = 0;
   }
+  
 }
 
 void
@@ -106,7 +107,20 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  return 1;
+  for (int i=1;i<INODE_NUM;i++){
+    // printf("%d\t",IBLOCK(i, bm->sb.nblocks));
+    inode_t* res = get_inode(i);
+    if (res==NULL){
+      inode_t* newnode = (inode_t*)malloc(sizeof(inode_t));
+      newnode->type = type;
+      bm->write_block(IBLOCK(i, bm->sb.nblocks), (const char*)newnode);
+      return i;
+    }else{
+      printf("\t 0x%x",*res);
+      free(res);
+    }
+  }
+  return 0;
 }
 
 void
@@ -117,7 +131,14 @@ inode_manager::free_inode(uint32_t inum)
    * note: you need to check if the inode is already a freed one;
    * if not, clear it, and remember to write back to disk.
    */
-
+  inode_t* res = get_inode(inum);
+  if (res==NULL){
+    printf("\tim: inode already freed %d",inum);
+  }else{
+    char* buf = new char[BLOCK_SIZE];
+    memset(buf,0,BLOCK_SIZE);
+    bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
+  }
   return;
 }
 
