@@ -41,7 +41,7 @@ block_manager::alloc_block()
   for (int i=IBLOCK(INODE_NUM,BLOCK_NUM)+1;i<BLOCK_NUM;i++){
     if (using_blocks[i]==0){
       using_blocks[i]=1;
-      printf("\tim:alloc block %d\n",i);
+      // printf("\tim:alloc block %d\n",i);
       return i;
     }
   }
@@ -120,7 +120,7 @@ inode_manager::alloc_inode(uint32_t type)
       buf[(i-1)%BLOCK_SIZE] = 1;
       bm->write_block(map_block,buf);
       free(buf);
-      printf("\tim:alloc inode %d\t",i);
+      // printf("\tim:alloc inode %d\t",i);
       inode_t* newnode = (inode_t*)malloc(sizeof(inode_t));
       memset(newnode,0,sizeof(inode_t));
       newnode->type = type;
@@ -219,17 +219,17 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    * note: read blocks related to inode number inum,
    * and copy them to buf_Out
    */
-  for(int i=0;i<sizeof(size)/sizeof(int);i++){
-    printf("%d:%d\t",i,size[i]);
-  }
+  // for(int i=0;i<sizeof(size)/sizeof(int);i++){
+  //   printf("%d:%d\t",i,size[i]);
+  // }
   inode_t *ino = get_inode(inum);
   *size = ino->size;
-  printf("test:%d\n",ino->blocks[0]);
+  // printf("test:%d\n",ino->blocks[0]);
   int chcnt = 0;
   int blcnt = 0;
   char* buf = new char[BLOCK_SIZE];
   bm->read_block(ino->blocks[blcnt],buf);
-  printf("test:%s\n",buf);
+  // printf("test:%s\n",buf);
   (*buf_out) = new char[*size];
   for(int i=0;i<*size;i++){
     (*buf_out)[i] = buf[chcnt];
@@ -261,7 +261,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  printf("write: inum:%d,buf:%s,size:%d",inum,buf,size);
+  // printf("write: inum:%d,buf:%s,size:%d",inum,buf,size);
   inode_t* ino = get_inode(inum);
   ino->size = size;
   blockid_t dirlist;
@@ -302,6 +302,9 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * you can refer to "struct attr" in extent_protocol.h
    */
   inode_t* res = get_inode(inum);
+  if (res==NULL){
+    return;
+  }
   a.type = res->type;
   a.mtime = res->mtime;
   a.atime = res->atime;
@@ -318,6 +321,21 @@ inode_manager::remove_file(uint32_t inum)
    * your code goes here
    * note: you need to consider about both the data block and inode of the file
    */
-  
+  inode_t *ino = get_inode(inum);
+  int size = ino->size;
+  int blocknum = size/BLOCK_SIZE + 1;
+  for (int i=0;i<blocknum;i++){
+    if (i<NDIRECT){
+      blockid_t bid = (ino->blocks)[i];
+      bm->free_block(bid);
+    }else{
+      char* buf = new char[BLOCK_SIZE];
+      bm->read_block((ino->blocks)[NDIRECT],buf);
+      blockid_t bid = ((int*)buf)[i-NDIRECT];
+      bm->free_block(bid);
+    }
+  }
+  free_inode(inum);
+  free(ino);
   return;
 }
