@@ -41,6 +41,7 @@ block_manager::alloc_block()
   for (int i=IBLOCK(INODE_NUM,BLOCK_NUM)+1;i<BLOCK_NUM;i++){
     if (using_blocks[i]==0){
       using_blocks[i]=1;
+      printf("\tim:alloc block %d\n",i);
       return i;
     }
   }
@@ -218,6 +219,34 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    * note: read blocks related to inode number inum,
    * and copy them to buf_Out
    */
+  for(int i=0;i<sizeof(size)/sizeof(int);i++){
+    printf("%d:%d\t",i,size[i]);
+  }
+  inode_t *ino = get_inode(inum);
+  *size = ino->size;
+  printf("test:%d\n",ino->blocks[0]);
+  int chcnt = 0;
+  int blcnt = 0;
+  char* buf = new char[BLOCK_SIZE];
+  bm->read_block(ino->blocks[blcnt],buf);
+  printf("test:%s\n",buf);
+  (*buf_out) = new char[*size];
+  for(int i=0;i<*size;i++){
+    (*buf_out)[i] = buf[chcnt];
+    chcnt++;
+    if (chcnt==BLOCK_SIZE){
+      chcnt = 0;
+      blcnt++;
+      if (blcnt<NDIRECT){
+        bm->read_block(ino->blocks[blcnt],buf);
+      }else{
+        char* blist = new char[BLOCK_SIZE];
+        bm->read_block(ino->blocks[NDIRECT],blist);
+        int bid = ((int*)blist)[blcnt-NDIRECT];
+        bm->read_block(bid,buf);
+      }
+    }
+  }
   
   return;
 }
@@ -232,7 +261,35 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  
+  printf("write: inum:%d,buf:%s,size:%d",inum,buf,size);
+  inode_t* ino = get_inode(inum);
+  ino->size = size;
+  blockid_t dirlist;
+  blockid_t* blist = new blockid_t[BLOCK_SIZE/sizeof(blockid_t)];
+  for (int b=0;b<size/BLOCK_SIZE+1;b++){
+    // if (b==size/BLOCK_SIZE){
+    //   blockid_t bid = alloc_block();
+    //   bm->write_block(bid,buf+b*BLOCK_SIZE);
+    // }else{
+      blockid_t bid = bm->alloc_block();
+      if (b<NDIRECT){
+        bm->write_block(bid,buf+b*BLOCK_SIZE);
+        ino->blocks[b] = bid;
+      }
+      if (b==NDIRECT){
+        dirlist = bm->alloc_block();
+        ino->blocks[b] = dirlist;
+      }
+      if (b>=NDIRECT){
+        blist[b-NDIRECT] = bid;
+      }
+    // }
+  }
+  if (size>BLOCK_SIZE*NDIRECT){
+    bm->write_block(dirlist,(char*)blist);
+  }
+  put_inode(inum,ino);
+  free(ino);
   return;
 }
 
