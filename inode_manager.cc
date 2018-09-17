@@ -6,12 +6,14 @@
 disk::disk()
 {
   bzero(blocks, sizeof(blocks));
+  for (int i=0;i<BLOCK_NUM;i++){
+    memset(blocks[i],0,BLOCK_SIZE);
+  }
 }
 
 void
 disk::read_block(blockid_t id, char *buf)
 {
-  buf = new char[BLOCK_SIZE];
   for (int i=0;i<BLOCK_SIZE;i++){
     buf[i] = blocks[id][i];
   }
@@ -97,6 +99,8 @@ inode_manager::inode_manager()
   }
 }
 
+#define INODE_MAP (IBLOCK(0,BLOCK_NUM)-2)
+
 /* Create a new file.
  * Return its inum. */
 uint32_t
@@ -107,18 +111,23 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  for (int i=1;i<INODE_NUM;i++){
-    // printf("%d\t",IBLOCK(i, bm->sb.nblocks));
-    inode_t* res = get_inode(i);
-    if (res==NULL){
+  for (int i=1;i<INODE_NUM+1;i++){
+    int map_block = INODE_MAP+(i-1)/BLOCK_SIZE;
+    char* buf = new char[BLOCK_SIZE];
+    bm->read_block(map_block,buf);
+    if (buf[(i-1)%BLOCK_SIZE]==0){
+      buf[(i-1)%BLOCK_SIZE] = 1;
+      bm->write_block(map_block,buf);
+      free(buf);
+      printf("\tim:alloc inode %d\t",i);
       inode_t* newnode = (inode_t*)malloc(sizeof(inode_t));
+      memset(newnode,0,sizeof(inode_t));
       newnode->type = type;
-      bm->write_block(IBLOCK(i, bm->sb.nblocks), (const char*)newnode);
+      put_inode(i,newnode);
+      free(newnode);
       return i;
-    }else{
-      printf("\t 0x%x",*res);
-      free(res);
     }
+
   }
   return 0;
 }
@@ -138,6 +147,14 @@ inode_manager::free_inode(uint32_t inum)
     char* buf = new char[BLOCK_SIZE];
     memset(buf,0,BLOCK_SIZE);
     bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
+    int map_block = INODE_MAP + (inum-1)/BLOCK_SIZE;
+    free(buf);
+    buf = new char[BLOCK_SIZE];
+    bm->read_block(map_block,buf);
+    buf[(inum-1)%BLOCK_SIZE] = 0;
+    bm->write_block(map_block,buf);
+    free(buf);
+    printf("\tim:free inode %d\n",inum);
   }
   return;
 }
@@ -227,7 +244,13 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
-  
+  inode_t* res = get_inode(inum);
+  a.type = res->type;
+  a.mtime = res->mtime;
+  a.atime = res->atime;
+  a.ctime = res->ctime;
+  a.size  = res->size;
+  free(res);
   return;
 }
 
