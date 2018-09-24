@@ -1,5 +1,6 @@
 #include "inode_manager.h"
 #include "string.h"
+#include "time.h"
 
 // disk layer -----------------------------------------
 
@@ -124,6 +125,10 @@ inode_manager::alloc_inode(uint32_t type)
       inode_t* newnode = (inode_t*)malloc(sizeof(inode_t));
       memset(newnode,0,sizeof(inode_t));
       newnode->type = type;
+      newnode->mtime = time(0);
+      newnode->ctime = time(0);
+      newnode->atime = time(0);
+      printf("CREATETIME::%d\n",newnode->mtime);
       put_inode(i,newnode);
       free(newnode);
       return i;
@@ -201,6 +206,8 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
   if (ino == NULL)
     return;
 
+  ino->mtime = time(0);
+  ino->ctime = time(0);
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
   ino_disk = (struct inode*)buf + inum%IPB;
   *ino_disk = *ino;
@@ -242,12 +249,11 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
       }else{
         char* blist = new char[BLOCK_SIZE];
         bm->read_block(ino->blocks[NDIRECT],blist);
-        int bid = ((int*)blist)[blcnt-NDIRECT];
+        blockid_t bid = ((blockid_t*)blist)[blcnt-NDIRECT];
         bm->read_block(bid,buf);
       }
     }
   }
-  
   return;
 }
 
@@ -261,29 +267,39 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  // printf("write: inum:%d,buf:%s,size:%d",inum,buf,size);
   inode_t* ino = get_inode(inum);
+  //free old blocks
+  int ori_size = ino->size;
+  int blocknum = ori_size/BLOCK_SIZE+1;
+  for (int i=0;i<blocknum;i++){
+    if (i<NDIRECT){
+      blockid_t bid = (ino->blocks)[i];
+      bm->free_block(bid);
+    }else{
+      char* buf = new char[BLOCK_SIZE];
+      bm->read_block((ino->blocks)[NDIRECT],buf);
+      blockid_t bid = ((int*)buf)[i-NDIRECT];
+      bm->free_block(bid);
+    }
+  }
+  //write new file
   ino->size = size;
   blockid_t dirlist;
   blockid_t* blist = new blockid_t[BLOCK_SIZE/sizeof(blockid_t)];
   for (int b=0;b<size/BLOCK_SIZE+1;b++){
-    // if (b==size/BLOCK_SIZE){
-    //   blockid_t bid = alloc_block();
-    //   bm->write_block(bid,buf+b*BLOCK_SIZE);
-    // }else{
-      blockid_t bid = bm->alloc_block();
-      if (b<NDIRECT){
-        bm->write_block(bid,buf+b*BLOCK_SIZE);
-        ino->blocks[b] = bid;
-      }
-      if (b==NDIRECT){
-        dirlist = bm->alloc_block();
-        ino->blocks[b] = dirlist;
-      }
-      if (b>=NDIRECT){
-        blist[b-NDIRECT] = bid;
-      }
-    // }
+    blockid_t bid = bm->alloc_block();
+    if (b<NDIRECT){
+      bm->write_block(bid,buf+b*BLOCK_SIZE);
+      ino->blocks[b] = bid;
+    }
+    if (b==NDIRECT){
+      dirlist = bm->alloc_block();
+      ino->blocks[b] = dirlist;
+    }
+    if (b>=NDIRECT){
+      blist[b-NDIRECT] = bid;
+      bm->write_block(bid,buf+b*BLOCK_SIZE);
+    }
   }
   if (size>BLOCK_SIZE*NDIRECT){
     bm->write_block(dirlist,(char*)blist);
