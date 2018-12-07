@@ -1,0 +1,14 @@
+CREATETIME::1544203687
+	im: put_inode 1
+	im: get_inode 1
+	im: put_inode 1
+Restart
+CREATETIME::1544203702
+	im: put_inode 1
+	im: get_inode 1
+	im: put_inode 1
+Restart
+CREATETIME::1544203746
+	im: put_inode 1
+	im: get_inode 1
+	im: put_inode 1
